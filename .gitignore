@@ -1,0 +1,27 @@
+# Virtual Environment & Secrets
+venv/
+.env
+
+# Python Cache & Logs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# MinIO Local Storage Buckets
+landing-zone/
+clean-zone/
+
+# Raw Datasets & Output Files
+adult.data
+adult.test
+adult.names
+old.adult.names
+Index
+*.csv
+*.parquet
+
+# Editor & OS Files
+.vscode/
+.DS_Store
