@@ -6,6 +6,7 @@ from typing import List
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core.cleaner import clean_and_upload
+from app.core.kafka_producer import send_cleaning_success_event
 from app.core.minio_client import ensure_bucket, get_minio_client
 
 router = APIRouter()
@@ -63,6 +64,10 @@ async def upload_files(files: List[UploadFile] = File(...)) -> dict:
                 original_filename=filename,
             )
             clean_zone_paths.append(cleaned_path)
+
+    # Send Kafka event after successful cleaning
+    if clean_zone_paths:
+        send_cleaning_success_event(version_folder, clean_zone_paths)
 
     return {
         "message": "Upload completed",
