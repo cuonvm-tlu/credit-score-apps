@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.api.routes import router
 from app.core.minio_client import init_minio
+from app.core.spark_session import stop_spark_session
 
 
 def create_app() -> FastAPI:
@@ -14,6 +15,10 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def startup_event() -> None:
         init_minio()
+
+    @app.on_event("shutdown")
+    def shutdown_event() -> None:
+        stop_spark_session()
 
     app.include_router(router)
     return app

@@ -5,8 +5,8 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 
 MINIO_ENDPOINT = "http://127.0.0.1:9000"
-MINIO_ACCESS_KEY = "admin"
-MINIO_SECRET_KEY = "password"
+MINIO_ACCESS_KEY = "minioadmin"
+MINIO_SECRET_KEY = "minioadmin"
 MINIO_REGION = "us-east-1"
 BUCKET_NAMES = ["landing-zone", "clean-zone"]
 
