@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.core.anonymize_k_anonymity import anonymize_cleaned_adult_k_anonymity_and_upload
 from app.core.anonymize_l_diversity import anonymize_cleaned_adult_l_diversity_and_upload
 from app.core.cleaner import clean_and_upload
+from app.core.spark_cleaner import spark_clean_and_upload
 from app.core.kafka_producer import send_cleaning_success_event
 from app.core.minio_client import ensure_bucket, get_minio_client
 
@@ -58,7 +59,18 @@ async def upload_files(files: List[UploadFile] = File(...)) -> dict:
         landing_zone_paths.append(f"landing-zone/{object_key}")
 
         if filename in {"adult.data", "adult.test"} or filename.lower().endswith(".csv"):
-            cleaned_path = clean_and_upload(
+            #Clean with Pandas
+            # cleaned_path = clean_and_upload(
+            #     client=client,
+            #     source_bucket="landing-zone",
+            #     source_key=object_key,
+            #     clean_bucket="clean-zone",
+            #     version_folder=version_folder,
+            #     original_filename=filename,
+            # )
+
+            #Clean + generalize with Spark
+            cleaned_path = spark_clean_and_upload(
                 client=client,
                 source_bucket="landing-zone",
                 source_key=object_key,
@@ -66,6 +78,7 @@ async def upload_files(files: List[UploadFile] = File(...)) -> dict:
                 version_folder=version_folder,
                 original_filename=filename,
             )
+
             clean_zone_paths.append(cleaned_path)
             # Separate anonymization flow: clean -> anonymize
             clean_bucket, clean_key = cleaned_path.split("/", 1)
