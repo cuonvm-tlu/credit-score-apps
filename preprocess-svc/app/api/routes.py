@@ -96,6 +96,14 @@ async def upload_files(files: List[UploadFile] = File(...)) -> dict:
                 l_value=2,
             )
             clean_zone_paths.append(ldiv_path)
+            # Apply Differential Privacy protection
+            dp_protected_path = apply_dp_protection_and_upload(
+                client=client,
+                clean_bucket=clean_bucket,
+                clean_object_key=clean_key,
+                epsilon=0.3,
+            )
+            clean_zone_paths.append(dp_protected_path)
 
     # Send Kafka event after successful cleaning
     if clean_zone_paths:
