@@ -11,6 +11,7 @@ from app.core.cleaner import clean_and_upload
 from app.core.spark_cleaner import spark_clean_and_upload
 from app.core.kafka_producer import send_cleaning_success_event
 from app.core.minio_client import ensure_bucket, get_minio_client
+from app.core.dp_anonymization_adapter import apply_dp_protection_and_upload
 
 router = APIRouter()
 
