@@ -168,12 +168,10 @@ def _spark_clean(raw_file_path: str):
     df = df.drop("fnlwgt")
 
     # S4: normalize income (strip trailing dot, map 0/1)
-    df = df.withColumn("income",
-        F.regexp_replace(F.trim(F.col("income")), r"\.$", ""))
-    df = df.withColumn("income",
-        F.when(F.col("income") == "<=50K", F.lit(0))
-         .when(F.col("income") == ">50K",  F.lit(1))
-         .otherwise(None).cast(IntegerType()))
+    # df = df.withColumn("income",
+    #     F.when(F.col("income") == "<=50K", F.lit(0))
+    #      .when(F.col("income") == ">50K",  F.lit(1))
+    #      .otherwise(None).cast(IntegerType()))
 
     # S5: drop null ở QI + SA
     critical = ["age", "sex", "marital-status", "occupation",
@@ -181,13 +179,13 @@ def _spark_clean(raw_file_path: str):
     df = df.dropna(subset=critical)
 
     # S6: age_group generalization (native Spark, không cần UDF)
-    df = df.withColumn("age_group",
-        F.concat(
-            (F.floor(F.col("age") / 10) * 10).cast("int").cast("string"),
-            F.lit("-"),
-            ((F.floor(F.col("age") / 10) * 10) + 10).cast("int").cast("string")
-        )
-    )
+    # df = df.withColumn("age_group",
+    #     F.concat(
+    #         (F.floor(F.col("age") / 10) * 10).cast("int").cast("string"),
+    #         F.lit("-"),
+    #         ((F.floor(F.col("age") / 10) * 10) + 10).cast("int").cast("string")
+    #     )
+    # )
 
     # S7: continent_code generalization (build map trên driver, apply bằng create_map)
     countries = [
