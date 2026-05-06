@@ -6,8 +6,8 @@ A FastAPI-based microservice for preprocessing Adult Census Income dataset files
 
 - **File Upload**: Accepts multiple file uploads via POST `/upload` endpoint.
 - **Data Cleaning**: Applies specific cleaning rules to data files (adult.data, adult.test, or .csv files).
-- **MinIO Integration**: Stores raw files in `landing-zone` and cleaned Parquet files in `clean-zone` with timestamp-based versioning.
-- **Kafka Messaging**: Publishes events to `data-cleaned-topic` after successful cleaning.
+- **MinIO Integration**: Stores raw files in `landing-zone`, cleaned Parquet files in `clean-zone`, and anonymized outputs in `anonymize-zone`.
+- **Kafka Messaging**: Publishes cleaning and anonymizing events through Kafka topics.
 - **Event-Driven**: Triggers downstream services via Kafka messages.
 
 ## Prerequisites
@@ -72,7 +72,7 @@ The service will be available at `http://127.0.0.1:8000`.
 
 **Endpoint**: `POST /upload`
 
-**Description**: Upload multiple files. Raw files are saved to MinIO `landing-zone`. Data files are cleaned and saved as Parquet to `clean-zone`. A Kafka message is published upon successful cleaning.
+**Description**: Upload multiple files. Raw files are saved to MinIO `landing-zone`. Data files are cleaned and saved as Parquet to `clean-zone`. Then Kafka-driven worker runs K-anonymity and L-diversity and stores outputs in `anonymize-zone`.
 
 **Request**:
 - `files`: List of files to upload (multipart/form-data)
@@ -105,7 +105,9 @@ For data files (adult.data, adult.test, or .csv):
 
 ## Kafka Events
 
-After cleaning, a message is sent to `data-cleaned-topic`:
+### 1) Cleaning completed event
+
+After cleaning (and DP post-processing), a message is sent to `data-cleaned-topic`:
 
 ```json
 {
@@ -116,15 +118,42 @@ After cleaning, a message is sent to `data-cleaned-topic`:
 }
 ```
 
+### 2) Anonymizing completed event
+
+`preprocess-svc` Kafka worker consumes `data-cleaned-topic`, runs K-anonymity + L-diversity for eligible `*_clean.parquet` files, uploads outputs to `anonymize-zone`, then publishes to `data-anonymized-topic`:
+
+```json
+{
+  "event_type": "DATA_ANNONIMIZING_COMPLETED",
+  "status": "success",
+  "version_id": "2026-05-06_21-30-00",
+  "annonimize_file_paths": [
+    "anonymize-zone/2026-05-06_21-30-00/adult_anon_k10.parquet",
+    "anonymize-zone/2026-05-06_21-30-00/adult_anon_l2.parquet"
+  ]
+}
+```
+
+### Anonymize flow (short)
+
+1. `POST /upload` uploads raw file -> `landing-zone`.
+2. Cleaner creates `*_clean.parquet` -> `clean-zone`.
+3. Service sends `DATA_CLEANING_COMPLETED` -> `data-cleaned-topic`.
+4. Background Kafka worker consumes message and runs:
+   - K-anonymity (k=10)
+   - L-diversity (l=2)
+5. Worker uploads anonymized files -> `anonymize-zone`.
+6. Worker sends `DATA_ANNONIMIZING_COMPLETED` -> `data-anonymized-topic`.
+
 ## Configuration
 
 - **MinIO**: Endpoint `http://127.0.0.1:9000`, Access Key `admin`, Secret Key `password`, Region `us-east-1`
-- **Kafka**: Bootstrap servers `127.0.0.1:9092`, Topic `data-cleaned-topic`
+- **Kafka**: Bootstrap servers `127.0.0.1:9092`, Topics `data-cleaned-topic` and `data-anonymized-topic`
 
 ## Development
 
 - The service uses timestamp-based versioning for file organization.
-- Buckets `landing-zone` and `clean-zone` are created automatically if they don't exist.
+- Buckets `landing-zone`, `clean-zone`, and `anonymize-zone` are created automatically if they don't exist.
 - Error handling ensures Kafka failures don't crash the upload process.
 
 ## Stopping Services
