@@ -7,4 +7,7 @@ pyarrow==15.0.2
 confluent-kafka==2.3.0
 boto3==1.34.70
 python-dotenv==1.0.1
-pyspark==4.1.1
+pyspark>=4.1.1
+pycountry
+pycountry-convert
+rapidfuzz

@@ -6,8 +6,11 @@ from typing import List
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core.cleaner import clean_and_upload
+from app.core.spark_cleaner import spark_clean_and_upload
 from app.core.kafka_producer import send_cleaning_success_event
 from app.core.minio_client import ensure_bucket, get_minio_client
+
+from app.core.dp_anonymization_adapter import apply_dp_protection_and_upload
 
 router = APIRouter()
 
@@ -56,7 +59,18 @@ async def upload_files(files: List[UploadFile] = File(...)) -> dict:
         landing_zone_paths.append(f"landing-zone/{object_key}")
 
         if filename in {"adult.data", "adult.test"} or filename.lower().endswith(".csv"):
-            cleaned_path = clean_and_upload(
+            #Clean with Pandas
+            # cleaned_path = clean_and_upload(
+            #     client=client,
+            #     source_bucket="landing-zone",
+            #     source_key=object_key,
+            #     clean_bucket="clean-zone",
+            #     version_folder=version_folder,
+            #     original_filename=filename,
+            # )
+
+            #Clean + generalize with Spark
+            cleaned_path = spark_clean_and_upload(
                 client=client,
                 source_bucket="landing-zone",
                 source_key=object_key,
@@ -65,6 +79,18 @@ async def upload_files(files: List[UploadFile] = File(...)) -> dict:
                 original_filename=filename,
             )
             clean_zone_paths.append(cleaned_path)
+
+            clean_bucket, clean_key = cleaned_path.split("/", 1)
+
+            # Apply Differential Privacy protection
+            dp_protected_path = apply_dp_protection_and_upload(
+                client=client,
+                clean_bucket=clean_bucket,
+                clean_object_key=clean_key,
+                epsilon=0.3,
+            )
+            clean_zone_paths.append(dp_protected_path)
+
     # Send Kafka event after successful cleaning
     if clean_zone_paths:
         send_cleaning_success_event(version_folder, clean_zone_paths)
