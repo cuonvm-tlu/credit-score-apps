@@ -8,7 +8,7 @@ MINIO_ENDPOINT = "http://127.0.0.1:9000"
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
 MINIO_REGION = "us-east-1"
-BUCKET_NAMES = ["landing-zone", "clean-zone"]
+BUCKET_NAMES = ["landing-zone", "clean-zone", "anonymize-zone"]
 
 
 def get_minio_client() -> Any:
@@ -32,7 +32,7 @@ def ensure_bucket(client: Any, bucket_name: str) -> None:
 
 
 def init_minio() -> None:
-    """Create the landing and clean buckets on application startup."""
+    """Create required buckets on application startup."""
     client = get_minio_client()
     for bucket_name in BUCKET_NAMES:
         ensure_bucket(client, bucket_name)

@@ -13,6 +13,7 @@ def anonymize_cleaned_adult_k_anonymity_and_upload(
     client: Any,
     clean_bucket: str,
     clean_object_key: str,
+    anonymize_bucket: str = "anonymize-zone",
     k: int = 10,
 ) -> str:
     """
@@ -32,14 +33,14 @@ def anonymize_cleaned_adult_k_anonymity_and_upload(
 
     with local_anon_path.open("rb") as parquet_file:
         client.put_object(
-            Bucket=clean_bucket,
+            Bucket=anonymize_bucket,
             Key=anon_object_key,
             Body=parquet_file,
             ContentLength=os.path.getsize(local_anon_path),
             ContentType="application/octet-stream",
         )
 
-    return f"{clean_bucket}/{anon_object_key}"
+    return f"{anonymize_bucket}/{anon_object_key}"
 
 
 def _download_object_to_temp(client: Any, bucket_name: str, object_key: str, suffix: str) -> str:

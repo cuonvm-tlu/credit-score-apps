@@ -5,8 +5,6 @@ from typing import List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.core.anonymize_k_anonymity import anonymize_cleaned_adult_k_anonymity_and_upload
-from app.core.anonymize_l_diversity import anonymize_cleaned_adult_l_diversity_and_upload
 from app.core.cleaner import clean_and_upload
 from app.core.kafka_producer import send_cleaning_success_event
 from app.core.minio_client import ensure_bucket, get_minio_client
@@ -67,23 +65,6 @@ async def upload_files(files: List[UploadFile] = File(...)) -> dict:
                 original_filename=filename,
             )
             clean_zone_paths.append(cleaned_path)
-            # Separate anonymization flow: clean -> anonymize
-            clean_bucket, clean_key = cleaned_path.split("/", 1)
-            anonymized_path = anonymize_cleaned_adult_k_anonymity_and_upload(
-                client=client,
-                clean_bucket=clean_bucket,
-                clean_object_key=clean_key,
-                k=10,
-            )
-            clean_zone_paths.append(anonymized_path)
-            ldiv_path = anonymize_cleaned_adult_l_diversity_and_upload(
-                client=client,
-                clean_bucket=clean_bucket,
-                clean_object_key=clean_key,
-                l_value=2,
-            )
-            clean_zone_paths.append(ldiv_path)
-
     # Send Kafka event after successful cleaning
     if clean_zone_paths:
         send_cleaning_success_event(version_folder, clean_zone_paths)

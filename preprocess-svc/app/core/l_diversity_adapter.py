@@ -18,6 +18,7 @@ QI_COLUMNS = [
 ]
 SA_COLUMN = "income"
 IS_CAT = [False, True, False, True, True, True, True, True]
+NUMERIC_QI_COLUMNS = [col for col, is_cat in zip(QI_COLUMNS, IS_CAT) if not is_cat]
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -30,6 +31,10 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     missing = [c for c in (QI_COLUMNS + [SA_COLUMN]) if c not in normalized.columns]
     if missing:
         raise ValueError(f"Missing required columns for L-diversity Adult flow: {missing}")
+    for col in NUMERIC_QI_COLUMNS:
+        # Convert integer-like floats (e.g. 7.0) to canonical integer strings.
+        numeric = pd.to_numeric(normalized[col], errors="coerce")
+        normalized[col] = numeric.apply(lambda x: str(int(x)) if pd.notna(x) else None)
     return normalized
 
 

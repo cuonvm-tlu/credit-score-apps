@@ -22,6 +22,7 @@ SA_COLUMN = "income"
 # QI indices that are treated as categorical in the original implementation.
 # (age, education_num are numeric)
 IS_CAT = [False, True, False, True, True, True, True, True]
+NUMERIC_QI_COLUMNS = [col for col, is_cat in zip(QI_COLUMNS, IS_CAT) if not is_cat]
 
 
 def _normalize_columns_for_mondrian(df: pd.DataFrame) -> pd.DataFrame:
@@ -35,6 +36,11 @@ def _normalize_columns_for_mondrian(df: pd.DataFrame) -> pd.DataFrame:
     missing = [c for c in (QI_COLUMNS + [SA_COLUMN]) if c not in normalized.columns]
     if missing:
         raise ValueError(f"Missing required columns for Basic_Mondrian Adult flow: {missing}")
+    for col in NUMERIC_QI_COLUMNS:
+        # Spark->Pandas may materialize integer-like values as float (e.g. 7.0).
+        # Mondrian utility code expects integer-compatible string values.
+        numeric = pd.to_numeric(normalized[col], errors="coerce")
+        normalized[col] = numeric.apply(lambda x: str(int(x)) if pd.notna(x) else None)
     return normalized
 
 
