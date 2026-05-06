@@ -67,9 +67,13 @@ def _consume_forever() -> None:
         consumer.close()
 
 
-def _handle_cleaning_completed_message(raw_value: bytes) -> None:
+def _handle_cleaning_completed_message(raw_value: Optional[bytes]) -> None:
+    if not raw_value:
+        logger.warning("Skip empty Kafka payload on topic: %s", CLEANING_TOPIC)
+        return
+
     try:
-        payload = json.loads(raw_value.decode("utf-8"))
+        payload = json.loads(raw_value.decode("utf-8").strip())
     except Exception:
         logger.exception("Invalid Kafka payload for anonymization.")
         return
