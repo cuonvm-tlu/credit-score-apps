@@ -85,6 +85,8 @@ def anonymize_adult_dataframe(df: pd.DataFrame, k: int = 10) -> tuple[pd.DataFra
     """
     normalized = _normalize_columns_for_mondrian(df)
     normalized = normalized.dropna(subset=QI_COLUMNS + [SA_COLUMN]).copy()
+    if normalized.empty:
+        raise ValueError("Input dataframe has no valid rows after Adult schema normalization.")
 
     # Build input records in the exact expected shape: QIs + SA as last column.
     records: list[list[str]] = []

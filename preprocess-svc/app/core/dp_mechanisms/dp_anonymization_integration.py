@@ -68,7 +68,6 @@ class DPAnonymizationIntegration:
             DataFrame with DP-protected numerical columns
         """
         df_noisy = df.copy()
-        breakpoint()
         if sensitivities is None:
             sensitivities = {col: 1.0 for col in numerical_columns}
         

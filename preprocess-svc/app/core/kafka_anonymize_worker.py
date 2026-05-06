@@ -87,6 +87,12 @@ def _handle_cleaning_completed_message(raw_value: bytes) -> None:
 
     try:
         output_paths = _run_anonymization(clean_paths)
+        if not output_paths:
+            logger.warning(
+                "No eligible outputs for anonymization, skip completion event. version_id=%s",
+                version_id,
+            )
+            return
         _send_anonymizing_completed_event(version_id, output_paths)
     except Exception:
         logger.exception("Anonymization processing failed for version_id=%s", version_id)
@@ -96,34 +102,47 @@ def _run_anonymization(clean_paths: List[str]) -> List[str]:
     client = get_minio_client()
     ensure_bucket(client, ANONYMIZE_BUCKET)
     anonymized_paths: List[str] = []
+    seen_clean_paths: set[str] = set()
 
     for clean_path in clean_paths:
+        if not clean_path.endswith("_clean.parquet"):
+            logger.info("Skip non-clean path for k/l anonymization: %s", clean_path)
+            continue
+        if clean_path in seen_clean_paths:
+            continue
+        seen_clean_paths.add(clean_path)
+
         bucket_and_key = _split_bucket_and_key(clean_path)
         if not bucket_and_key:
             logger.warning("Skip invalid clean path: %s", clean_path)
             continue
         clean_bucket, clean_key = bucket_and_key
 
-        k_path = anonymize_cleaned_adult_k_anonymity_and_upload(
-            client=client,
-            clean_bucket=clean_bucket,
-            clean_object_key=clean_key,
-            anonymize_bucket=ANONYMIZE_BUCKET,
-            k=10,
-        )
-        anonymized_paths.append(k_path)
+        try:
+            k_path = anonymize_cleaned_adult_k_anonymity_and_upload(
+                client=client,
+                clean_bucket=clean_bucket,
+                clean_object_key=clean_key,
+                anonymize_bucket=ANONYMIZE_BUCKET,
+                k=10,
+            )
+            anonymized_paths.append(k_path)
 
-        l_path = anonymize_cleaned_adult_l_diversity_and_upload(
-            client=client,
-            clean_bucket=clean_bucket,
-            clean_object_key=clean_key,
-            anonymize_bucket=ANONYMIZE_BUCKET,
-            l_value=2,
-        )
-        anonymized_paths.append(l_path)
-
-    if not anonymized_paths:
-        raise ValueError("No anonymized outputs generated.")
+            l_path = anonymize_cleaned_adult_l_diversity_and_upload(
+                client=client,
+                clean_bucket=clean_bucket,
+                clean_object_key=clean_key,
+                anonymize_bucket=ANONYMIZE_BUCKET,
+                l_value=2,
+            )
+            anonymized_paths.append(l_path)
+        except ValueError as exc:
+            logger.warning(
+                "Skip path due to invalid/empty anonymization input: %s (%s)",
+                clean_path,
+                exc,
+            )
+            continue
 
     return anonymized_paths
 

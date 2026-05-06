@@ -5,6 +5,7 @@ Dùng Spark thay vì Pandas, thêm generalization (age_group, continent_code).
 import os
 import re
 import tempfile
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -86,15 +87,22 @@ def spark_clean_and_upload(
     clean_filename = Path(original_filename).stem.replace(".", "_") + "_clean.parquet"
     local_parquet = Path(tempfile.gettempdir()) / clean_filename
 
-    # Spark write → folder, lấy file duy nhất ra
+    # Spark write -> folder, then move the single part file.
+    # On Windows this may fail without HADOOP_HOME/winutils, so fallback to Pandas write.
     tmp_spark_out = str(local_parquet) + "_spark_out"
-    df_spark.coalesce(1).write.mode("overwrite").parquet(tmp_spark_out)
-    part_file = next(
-        Path(tmp_spark_out).glob("part-*.parquet"), None
-    )
-    if part_file is None:
-        raise RuntimeError("Spark write produced no parquet file")
-    part_file.rename(local_parquet)
+    try:
+        df_spark.coalesce(1).write.mode("overwrite").parquet(tmp_spark_out)
+        part_file = next(Path(tmp_spark_out).glob("part-*.parquet"), None)
+        if part_file is None:
+            raise RuntimeError("Spark write produced no parquet file")
+        part_file.rename(local_parquet)
+    except Exception:
+        # Fallback path for local Windows development where Spark local FS permission
+        # helpers are unavailable (HADOOP_HOME/winutils not configured).
+        pdf = df_spark.toPandas()
+        pdf.to_parquet(local_parquet, index=False)
+    finally:
+        shutil.rmtree(tmp_spark_out, ignore_errors=True)
 
     # Upload lên MinIO clean-zone
     with local_parquet.open("rb") as f:
@@ -149,7 +157,9 @@ def _spark_clean(raw_file_path: str):
         .schema(schema)
         .option("header", "false")
         .option("mode", "PERMISSIVE")
-        .option("nanValue", "?")
+        .option("ignoreLeadingWhiteSpace", "true")
+        .option("ignoreTrailingWhiteSpace", "true")
+        .option("nullValue", "?")
         .csv(raw_file_path)
     )
 
