@@ -20,8 +20,11 @@ from .config import (
     DPConfig,
     PrivacyLevel,
     AnonymizationDPConfig,
+    DPParameterSet,
+    DPExecutionPlan,
     DPPresets,
     get_dp_config,
+    load_dp_execution_plan,
     set_dp_config,
     init_dp_config_from_preset,
 )
@@ -44,8 +47,11 @@ __all__ = [
     "DPConfig",
     "PrivacyLevel",
     "AnonymizationDPConfig",
+    "DPParameterSet",
+    "DPExecutionPlan",
     "DPPresets",
     "get_dp_config",
+    "load_dp_execution_plan",
     "set_dp_config",
     "init_dp_config_from_preset",
 ]

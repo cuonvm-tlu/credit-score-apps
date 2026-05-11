@@ -7,6 +7,7 @@ from confluent_kafka import Consumer, Producer
 
 from app.core.anonymize_k_anonymity import anonymize_cleaned_adult_k_anonymity_and_upload
 from app.core.anonymize_l_diversity import anonymize_cleaned_adult_l_diversity_and_upload
+from app.core.dp_anonymization_adapter import apply_configured_dp_protection_and_upload
 from app.core.minio_client import ensure_bucket, get_minio_client
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,22 @@ def _run_anonymization(clean_paths: List[str]) -> List[str]:
                 l_value=2,
             )
             anonymized_paths.append(l_path)
+
+            try:
+                dp_paths = apply_configured_dp_protection_and_upload(
+                    client=client,
+                    clean_bucket=clean_bucket,
+                    clean_object_key=clean_key,
+                    anonymize_bucket=ANONYMIZE_BUCKET,
+                )
+                anonymized_paths.extend(dp_paths)
+            except Exception:
+                logger.exception(
+                    "DP processing failed for clean path: %s/%s",
+                    clean_bucket,
+                    clean_key,
+                )
+                continue
         except ValueError as exc:
             logger.warning(
                 "Skip path due to invalid/empty anonymization input: %s (%s)",

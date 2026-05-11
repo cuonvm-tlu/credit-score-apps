@@ -6,7 +6,7 @@ A FastAPI-based microservice for preprocessing Adult Census Income dataset files
 
 - **File Upload**: Accepts multiple file uploads via POST `/upload` endpoint.
 - **Data Cleaning**: Applies specific cleaning rules to data files (adult.data, adult.test, or .csv files).
-- **MinIO Integration**: Stores raw files in `landing-zone` and cleaned/DP-protected Parquet files in `clean-zone`.
+- **MinIO Integration**: Stores raw files in `landing-zone` and cleaned Parquet files in `clean-zone`.
 - **Kafka Messaging**: Publishes cleaning events for downstream services.
 - **Event-Driven**: Triggers downstream services via Kafka messages.
 
@@ -72,7 +72,7 @@ The service will be available at `http://127.0.0.1:8000`.
 
 **Endpoint**: `POST /upload`
 
-**Description**: Upload multiple files. Raw files are saved to MinIO `landing-zone`. Data files are cleaned and saved as Parquet to `clean-zone` (with optional DP-protected output). A Kafka message is then published for downstream anonymization service.
+**Description**: Upload multiple files. Raw files are saved to MinIO `landing-zone`. Data files are cleaned and saved as Parquet to `clean-zone`. A Kafka message is then published for downstream anonymization service.
 
 **Request**:
 - `files`: List of files to upload (multipart/form-data)
@@ -105,7 +105,7 @@ For data files (adult.data, adult.test, or .csv):
 
 ## Kafka Events
 
-After cleaning (and DP post-processing), a message is sent to `data-cleaned-topic`:
+After cleaning, a message is sent to `data-cleaned-topic`:
 
 ```json
 {

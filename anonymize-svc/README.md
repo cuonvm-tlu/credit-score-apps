@@ -1,11 +1,11 @@
 # Anonymization Service
 
-A FastAPI-based worker service for anonymizing Adult Census Income data. It consumes cleaned-data Kafka messages, runs k-anonymity and l-diversity, writes outputs to MinIO, and publishes anonymization completion events.
+A FastAPI-based worker service for anonymizing Adult Census Income data. It consumes cleaned-data Kafka messages, runs k-anonymity, l-diversity, and differential privacy (DP), writes outputs to MinIO, and publishes anonymization completion events.
 
 ## Features
 
 - **Kafka Consumer Worker**: Consumes `DATA_CLEANING_COMPLETED` events from `data-cleaned-topic`.
-- **K-anonymity + L-diversity**: Applies anonymization for eligible `*_clean.parquet` files.
+- **K-anonymity + L-diversity + DP**: Applies anonymization for eligible `*_clean.parquet` files.
 - **MinIO Integration**: Reads inputs from `clean-zone` and writes anonymized outputs to `anonymize-zone`.
 - **Kafka Producer**: Publishes `DATA_ANNONIMIZING_COMPLETED` events to `data-anonymized-topic`.
 - **Health Endpoint**: Exposes `GET /health` for liveness checks.
@@ -97,7 +97,7 @@ The service consumes this event from `data-cleaned-topic`:
 
 ### 2) Output event (published)
 
-After running K-anonymity + L-diversity, the service publishes to `data-anonymized-topic`:
+After running K-anonymity + L-diversity + DP, the service publishes to `data-anonymized-topic`:
 
 ```json
 {
@@ -106,7 +106,8 @@ After running K-anonymity + L-diversity, the service publishes to `data-anonymiz
   "version_id": "2026-05-06_21-30-00",
   "annonimize_file_paths": [
     "anonymize-zone/2026-05-06_21-30-00/adult_anon_k10.parquet",
-    "anonymize-zone/2026-05-06_21-30-00/adult_anon_l2.parquet"
+    "anonymize-zone/2026-05-06_21-30-00/adult_anon_l2.parquet",
+    "anonymize-zone/2026-05-06_21-30-00/adult_dp_e0_30_src2026-05-06_21-30-00_run20260506213112.parquet"
   ]
 }
 ```
@@ -117,6 +118,7 @@ After running K-anonymity + L-diversity, the service publishes to `data-anonymiz
 2. `anonymize-svc` worker consumes message and runs:
    - K-anonymity (k=10)
    - L-diversity (l=2)
+  - Differential Privacy (epsilon=0.3)
 3. Worker uploads anonymized files -> `anonymize-zone`.
 4. Worker sends `DATA_ANNONIMIZING_COMPLETED` -> `data-anonymized-topic`.
 

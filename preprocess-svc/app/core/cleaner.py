@@ -63,17 +63,38 @@ def _download_object_to_temp(client: Any, bucket_name: str, object_key: str, ori
     return temp_file.name
 
 
+def _detect_has_header(raw_file_path: str) -> bool:
+    """Check if the CSV file starts with a text header row (not a data row)."""
+    try:
+        with open(raw_file_path, "r", encoding="utf-8", errors="replace") as f:
+            first_line = f.readline().strip()
+        # If the first field can be parsed as an integer, it's likely a data row (age)
+        first_field = first_line.split(",")[0].strip()
+        int(first_field)
+        return False
+    except ValueError:
+        return True
+
+
 def _clean_dataframe(raw_file_path: str) -> pd.DataFrame:
+    has_header = _detect_has_header(raw_file_path)
     df = pd.read_csv(
         raw_file_path,
-        header=None,
-        names=COLUMN_NAMES,
+        header=0 if has_header else None,
+        names=None if has_header else COLUMN_NAMES,
         na_values="?",
         skipinitialspace=True,
     )
+    # Standardise column names when header is present (strip spaces, lower-case)
+    if has_header:
+        df.columns = [c.strip().lower() for c in df.columns]
+    # Re-order / select only the expected columns (drop extras like fnlwgt if present)
+    available = [c for c in COLUMN_NAMES if c in df.columns]
+    df = df[available]
 
     df.dropna(inplace=True)
-    df.drop(columns=["fnlwgt"], inplace=True)
+    if "fnlwgt" in df.columns:
+        df.drop(columns=["fnlwgt"], inplace=True)
 
     string_columns = df.select_dtypes(include="object").columns
     for column in string_columns:
