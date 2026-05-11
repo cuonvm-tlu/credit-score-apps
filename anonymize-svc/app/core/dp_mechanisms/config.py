@@ -6,12 +6,15 @@ for DP mechanisms used in the preprocessing service.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from enum import Enum
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+DEFAULT_DP_RUN_CONFIG_PATH = Path(__file__).with_name("dp_run_config.json")
 
 
 class PrivacyLevel(Enum):
@@ -154,6 +157,228 @@ class AnonymizationDPConfig:
             raise ValueError("l_value must be >= 1")
         if self.dp_epsilon <= 0:
             raise ValueError("dp_epsilon must be positive")
+
+
+@dataclass
+class DPParameterSet:
+    """One executable DP parameter set for one run."""
+
+    name: str
+    enabled: bool = True
+    mechanism: str = "laplace"
+    epsilon: float = 0.3
+    delta: float = 0.0
+    max_epsilon_per_attribute: float = 0.1
+    numerical_sensitivity: Dict[str, float] = field(default_factory=dict)
+    clipping_ranges: Dict[str, List[float]] = field(default_factory=dict)
+    epsilon_allocation: Optional[Dict[str, float]] = None
+    numeric_mechanism: Optional[str] = None
+    categorical_mechanism: Optional[str] = None
+    categorical_columns: List[str] = field(default_factory=list)
+    categorical_epsilon_allocation: Optional[Dict[str, float]] = None
+    threshold_rules: List[Dict[str, Any]] = field(default_factory=list)
+    above_threshold_values: Dict[str, float] = field(default_factory=dict)
+    above_threshold_return_none: bool = False
+    notes: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("DP parameter set name must not be empty")
+        if self.epsilon <= 0:
+            raise ValueError("epsilon must be positive")
+        normalized_mechanism = self.mechanism.strip().lower()
+        if normalized_mechanism not in {"laplace", "exponential", "above_threshold", "mixed"}:
+            raise ValueError(
+                "mechanism must be one of: laplace, exponential, above_threshold, mixed"
+            )
+        self.mechanism = normalized_mechanism
+        if self.numeric_mechanism is not None:
+            self.numeric_mechanism = self.numeric_mechanism.strip().lower()
+            if self.numeric_mechanism != "laplace":
+                raise ValueError("numeric_mechanism currently supports only 'laplace'")
+        if self.categorical_mechanism is not None:
+            self.categorical_mechanism = self.categorical_mechanism.strip().lower()
+            if self.categorical_mechanism != "exponential":
+                raise ValueError(
+                    "categorical_mechanism currently supports only 'exponential'"
+                )
+        if not (0 <= self.delta < 1):
+            raise ValueError("delta must be in [0, 1)")
+        if self.max_epsilon_per_attribute <= 0:
+            raise ValueError("max_epsilon_per_attribute must be positive")
+        if self.epsilon_allocation:
+            invalid_keys = [
+                key for key, value in self.epsilon_allocation.items() if value <= 0
+            ]
+            if invalid_keys:
+                raise ValueError(
+                    f"epsilon_allocation must be positive for keys: {invalid_keys}"
+                )
+
+    @classmethod
+    def from_dict(cls, name: str, data: Dict[str, Any]) -> "DPParameterSet":
+        return cls(
+            name=name,
+            enabled=bool(data.get("enabled", True)),
+            mechanism=str(data.get("mechanism", "laplace")),
+            epsilon=float(data.get("epsilon", 0.3)),
+            delta=float(data.get("delta", 0.0)),
+            max_epsilon_per_attribute=float(data.get("max_epsilon_per_attribute", 0.1)),
+            numerical_sensitivity={
+                str(key): float(value)
+                for key, value in data.get("numerical_sensitivity", {}).items()
+            },
+            clipping_ranges={
+                str(key): list(value)
+                for key, value in data.get("clipping_ranges", {}).items()
+            },
+            epsilon_allocation=(
+                {
+                    str(key): float(value)
+                    for key, value in data.get("epsilon_allocation", {}).items()
+                }
+                if data.get("epsilon_allocation")
+                else None
+            ),
+            numeric_mechanism=(
+                str(data.get("numeric_mechanism"))
+                if data.get("numeric_mechanism") is not None
+                else None
+            ),
+            categorical_mechanism=(
+                str(data.get("categorical_mechanism"))
+                if data.get("categorical_mechanism") is not None
+                else None
+            ),
+            categorical_columns=[
+                str(value) for value in data.get("categorical_columns", [])
+            ],
+            categorical_epsilon_allocation=(
+                {
+                    str(key): float(value)
+                    for key, value in data.get("categorical_epsilon_allocation", {}).items()
+                }
+                if data.get("categorical_epsilon_allocation")
+                else None
+            ),
+            threshold_rules=list(data.get("threshold_rules", [])),
+            above_threshold_values={
+                str(key): float(value)
+                for key, value in data.get("above_threshold_values", {}).items()
+            },
+            above_threshold_return_none=bool(
+                data.get("above_threshold_return_none", False)
+            ),
+            notes=str(data.get("notes", "")),
+        )
+
+
+@dataclass
+class DPExecutionPlan:
+    """Runtime plan that supports single-profile or batch-profile execution."""
+
+    mode: str = "single"
+    active_profile: str = "baseline_adult"
+    batch_profiles: List[str] = field(default_factory=list)
+    stop_on_error: bool = False
+    output_name_template: str = (
+        "{base}_dp_{profile}_e{epsilon}_src{source_version}_run{run_version}.parquet"
+    )
+    profiles: Dict[str, DPParameterSet] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.mode not in {"single", "batch"}:
+            raise ValueError("mode must be either 'single' or 'batch'")
+        if not self.profiles:
+            raise ValueError("profiles must not be empty")
+        if self.active_profile not in self.profiles:
+            raise ValueError(f"Unknown active_profile: {self.active_profile}")
+        invalid_batch_profiles = [name for name in self.batch_profiles if name not in self.profiles]
+        if invalid_batch_profiles:
+            raise ValueError(f"Unknown batch profiles: {invalid_batch_profiles}")
+
+    def get_profiles_to_run(self) -> List[DPParameterSet]:
+        if self.mode == "single":
+            selected_names = [self.active_profile]
+        else:
+            selected_names = self.batch_profiles or [self.active_profile]
+        return [self.profiles[name] for name in selected_names if self.profiles[name].enabled]
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DPExecutionPlan":
+        profiles = {
+            str(name): DPParameterSet.from_dict(str(name), profile)
+            for name, profile in data.get("profiles", {}).items()
+        }
+        return cls(
+            mode=str(data.get("mode", "single")),
+            active_profile=str(data.get("active_profile", "baseline_adult")),
+            batch_profiles=[str(name) for name in data.get("batch_profiles", [])],
+            stop_on_error=bool(data.get("stop_on_error", False)),
+            output_name_template=str(
+                data.get(
+                    "output_name_template",
+                    "{base}_dp_{profile}_e{epsilon}_src{source_version}_run{run_version}.parquet",
+                )
+            ),
+            profiles=profiles,
+        )
+
+
+def _default_dp_execution_plan() -> DPExecutionPlan:
+    baseline = DPParameterSet(
+        name="baseline_adult",
+        epsilon=0.3,
+        max_epsilon_per_attribute=0.1,
+        numerical_sensitivity={
+            "age": 100.0,
+            "education-num": 16.0,
+            "capital-gain": 100000.0,
+            "capital-loss": 5000.0,
+            "hours-per-week": 168.0,
+        },
+        clipping_ranges={
+            "age": [0, 100],
+            "education-num": [0, 16],
+            "capital-gain": [0, 100000],
+            "capital-loss": [0, 5000],
+            "hours-per-week": [0, 168],
+        },
+        notes="Matches the current runtime behavior before externalized run config.",
+    )
+    return DPExecutionPlan(
+        mode="single",
+        active_profile=baseline.name,
+        profiles={baseline.name: baseline},
+    )
+
+
+def _strip_json_comments(text: str) -> str:
+    """Remove // and /* */ comments from a JSON-like config file."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    text = re.sub(r"(^|\s)//.*$", "", text, flags=re.MULTILINE)
+    return text
+
+
+def load_dp_execution_plan(config_path: Optional[str] = None) -> DPExecutionPlan:
+    """Load DP execution plan from JSON, with a safe default fallback."""
+    path = Path(config_path) if config_path else DEFAULT_DP_RUN_CONFIG_PATH
+    if not path.exists():
+        logger.warning("DP execution config not found at %s, using default plan", path)
+        return _default_dp_execution_plan()
+
+    with path.open("r", encoding="utf-8") as file_obj:
+        raw_text = file_obj.read()
+    data = json.loads(_strip_json_comments(raw_text))
+
+    plan = DPExecutionPlan.from_dict(data)
+    logger.info(
+        "Loaded DP execution plan: path=%s mode=%s profiles=%s",
+        path,
+        plan.mode,
+        list(plan.profiles.keys()),
+    )
+    return plan
 
 
 # Preset configurations
