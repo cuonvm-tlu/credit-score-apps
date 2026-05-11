@@ -6,7 +6,9 @@ import os
 import re
 import tempfile
 import shutil
+import logging
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import pycountry
@@ -18,6 +20,8 @@ from pyspark.sql.types import StringType
 
 from app.core.spark_session import get_spark_session
 
+logger = logging.getLogger("uvicorn.error")
+
 # ── Country → continent mapping (build once on import) ─────────────────────
 
 _SPECIAL_CASES = {
@@ -26,6 +30,10 @@ _SPECIAL_CASES = {
     "Outlying US": "United States", "South": "Other",
 }
 _COUNTRY_NAMES = [c.name for c in pycountry.countries]
+
+
+def _elapsed_seconds(start: float) -> float:
+    return round(perf_counter() - start, 6)
 
 
 def _normalize(name: str) -> str:
@@ -68,20 +76,29 @@ def spark_clean_and_upload(
 ) -> str:
     """
     Giống clean_and_upload() trong cleaner.py nhưng dùng Spark.
-    Thêm 2 cột: age_group, continent_code (generalization cho K-anonymity).
     """
+    total_start = perf_counter()
+    benchmark: dict[str, float | str] = {
+        "source_key": source_key,
+        "original_filename": original_filename,
+    }
+
     # Download raw từ MinIO về temp
     suffix = Path(original_filename).suffix or ".data"
     temp_raw = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
+        start = perf_counter()
         client.download_fileobj(
             Bucket=source_bucket, Key=source_key, Fileobj=temp_raw
         )
+        benchmark["download_seconds"] = _elapsed_seconds(start)
     finally:
         temp_raw.close()
 
     # Spark clean + generalize
+    start = perf_counter()
     df_spark = _spark_clean(temp_raw.name)
+    benchmark["spark_clean_seconds"] = _elapsed_seconds(start)
 
     # Ghi parquet tạm
     clean_filename = Path(original_filename).stem.replace(".", "_") + "_clean.parquet"
@@ -90,21 +107,26 @@ def spark_clean_and_upload(
     # Spark write -> folder, then move the single part file.
     # On Windows this may fail without HADOOP_HOME/winutils, so fallback to Pandas write.
     tmp_spark_out = str(local_parquet) + "_spark_out"
+    start = perf_counter()
     try:
         df_spark.coalesce(1).write.mode("overwrite").parquet(tmp_spark_out)
         part_file = next(Path(tmp_spark_out).glob("part-*.parquet"), None)
         if part_file is None:
             raise RuntimeError("Spark write produced no parquet file")
         part_file.rename(local_parquet)
+        benchmark["write_engine"] = "spark"
     except Exception:
         # Fallback path for local Windows development where Spark local FS permission
         # helpers are unavailable (HADOOP_HOME/winutils not configured).
         pdf = df_spark.toPandas()
         pdf.to_parquet(local_parquet, index=False)
+        benchmark["write_engine"] = "pandas_fallback"
     finally:
         shutil.rmtree(tmp_spark_out, ignore_errors=True)
+        benchmark["write_seconds"] = _elapsed_seconds(start)
 
     # Upload lên MinIO clean-zone
+    start = perf_counter()
     with local_parquet.open("rb") as f:
         client.put_object(
             Bucket=clean_bucket,
@@ -113,6 +135,9 @@ def spark_clean_and_upload(
             ContentLength=os.path.getsize(local_parquet),
             ContentType="application/octet-stream",
         )
+    benchmark["upload_seconds"] = _elapsed_seconds(start)
+    benchmark["total_seconds"] = _elapsed_seconds(total_start)
+    logger.info("spark_cleaner_benchmark=%s", benchmark)
 
     return f"{clean_bucket}/{version_folder}/{clean_filename}"
 
@@ -210,7 +235,7 @@ def _spark_clean(raw_file_path: str):
         map_pairs.extend([F.lit(k), F.lit(v)])
     spark_map = F.create_map(*map_pairs)
 
-    df = df.withColumn("continent_code",
-        F.coalesce(spark_map[F.col("`native-country`")], F.lit("Other")))
+    # df = df.withColumn("continent_code",
+    #     F.coalesce(spark_map[F.col("`native-country`")], F.lit("Other")))
 
     return df
