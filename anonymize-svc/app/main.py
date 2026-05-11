@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 
 from app.api.routes import router
@@ -9,6 +11,20 @@ from app.core.minio_client import init_minio
 from app.core.spark_session import stop_spark_session
 
 
+def _configure_app_logging() -> None:
+    """Make app.* INFO logs visible (uvicorn/root often leaves them below WARNING only)."""
+    app_log = logging.getLogger("app")
+    app_log.setLevel(logging.INFO)
+    if app_log.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"),
+    )
+    app_log.addHandler(handler)
+    app_log.propagate = False
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -18,6 +34,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def startup_event() -> None:
+        _configure_app_logging()
         init_minio()
         start_anonymization_consumer()
 
