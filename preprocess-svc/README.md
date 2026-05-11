@@ -4,6 +4,7 @@ A FastAPI-based microservice for preprocessing Adult Census Income dataset files
 
 ## Features
 
+- **Testing on distributed Spark**
 - **File Upload**: Accepts multiple file uploads via POST `/upload` endpoint.
 - **Data Cleaning**: Applies specific cleaning rules to data files (adult.data, adult.test, or .csv files).
 - **MinIO Integration**: Stores raw files in `landing-zone` and cleaned/DP-protected Parquet files in `clean-zone`.
