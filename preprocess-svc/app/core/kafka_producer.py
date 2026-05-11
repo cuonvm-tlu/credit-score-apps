@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import List
 
 from confluent_kafka import Producer
@@ -10,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 # Kafka configuration
 KAFKA_CONFIG = {
-    'bootstrap.servers': '127.0.0.1:9092',
+    'bootstrap.servers': os.getenv('KAFKA_BOOTSTRAP_SERVERS', '127.0.0.1:9092'),
 }
 
-TOPIC = 'data-cleaned-topic'
+TOPIC = os.getenv('KAFKA_TOPIC', 'data-cleaned-topic')
 
 
 def delivery_report(err, msg):

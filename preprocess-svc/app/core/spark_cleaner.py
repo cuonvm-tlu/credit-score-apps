@@ -2,10 +2,8 @@
 spark_cleaner.py — Thay thế _clean_dataframe() trong cleaner.py
 Dùng Spark thay vì Pandas, thêm generalization (age_group, continent_code).
 """
-import os
 import re
-import tempfile
-import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -70,51 +68,17 @@ def spark_clean_and_upload(
     Giống clean_and_upload() trong cleaner.py nhưng dùng Spark.
     Thêm 2 cột: age_group, continent_code (generalization cho K-anonymity).
     """
-    # Download raw từ MinIO về temp
-    suffix = Path(original_filename).suffix or ".data"
-    temp_raw = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    try:
-        client.download_fileobj(
-            Bucket=source_bucket, Key=source_key, Fileobj=temp_raw
-        )
-    finally:
-        temp_raw.close()
-
     # Spark clean + generalize
-    df_spark = _spark_clean(temp_raw.name)
+    df_spark = _spark_clean(f"s3a://{source_bucket}/{source_key}")
 
-    # Ghi parquet tạm
     clean_filename = Path(original_filename).stem.replace(".", "_") + "_clean.parquet"
-    local_parquet = Path(tempfile.gettempdir()) / clean_filename
+    clean_key = f"{version_folder}/{clean_filename}"
+    tmp_prefix = f"{version_folder}/_spark_tmp/{Path(clean_filename).stem}-{uuid.uuid4().hex}"
 
-    # Spark write -> folder, then move the single part file.
-    # On Windows this may fail without HADOOP_HOME/winutils, so fallback to Pandas write.
-    tmp_spark_out = str(local_parquet) + "_spark_out"
-    try:
-        df_spark.coalesce(1).write.mode("overwrite").parquet(tmp_spark_out)
-        part_file = next(Path(tmp_spark_out).glob("part-*.parquet"), None)
-        if part_file is None:
-            raise RuntimeError("Spark write produced no parquet file")
-        part_file.rename(local_parquet)
-    except Exception:
-        # Fallback path for local Windows development where Spark local FS permission
-        # helpers are unavailable (HADOOP_HOME/winutils not configured).
-        pdf = df_spark.toPandas()
-        pdf.to_parquet(local_parquet, index=False)
-    finally:
-        shutil.rmtree(tmp_spark_out, ignore_errors=True)
+    df_spark.coalesce(1).write.mode("overwrite").parquet(f"s3a://{clean_bucket}/{tmp_prefix}")
+    _promote_single_parquet_part(client, clean_bucket, tmp_prefix, clean_key)
 
-    # Upload lên MinIO clean-zone
-    with local_parquet.open("rb") as f:
-        client.put_object(
-            Bucket=clean_bucket,
-            Key=f"{version_folder}/{clean_filename}",
-            Body=f,
-            ContentLength=os.path.getsize(local_parquet),
-            ContentType="application/octet-stream",
-        )
-
-    return f"{clean_bucket}/{version_folder}/{clean_filename}"
+    return f"{clean_bucket}/{clean_key}"
 
 
 def _spark_clean(raw_file_path: str):
@@ -210,7 +174,32 @@ def _spark_clean(raw_file_path: str):
         map_pairs.extend([F.lit(k), F.lit(v)])
     spark_map = F.create_map(*map_pairs)
 
-    df = df.withColumn("continent_code",
-        F.coalesce(spark_map[F.col("`native-country`")], F.lit("Other")))
+    # df = df.withColumn("continent_code",
+    #     F.coalesce(spark_map[F.col("`native-country`")], F.lit("Other")))
 
     return df
+
+
+def _promote_single_parquet_part(client: Any, bucket: str, tmp_prefix: str, final_key: str) -> None:
+    response = client.list_objects_v2(Bucket=bucket, Prefix=f"{tmp_prefix}/")
+    objects = response.get("Contents", [])
+    part_key = next(
+        (obj["Key"] for obj in objects if Path(obj["Key"]).name.startswith("part-")),
+        None,
+    )
+    if part_key is None:
+        raise RuntimeError(f"Spark write produced no parquet part under {bucket}/{tmp_prefix}")
+
+    client.copy_object(
+        Bucket=bucket,
+        Key=final_key,
+        CopySource={"Bucket": bucket, "Key": part_key},
+        ContentType="application/octet-stream",
+        MetadataDirective="REPLACE",
+    )
+
+    if objects:
+        client.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": [{"Key": obj["Key"]} for obj in objects]},
+        )

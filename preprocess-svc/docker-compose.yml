@@ -1,5 +1,17 @@
-version: "3.8"
 services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: local-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+
   kafka:
     image: apache/kafka:3.7.0
     container_name: local-kafka
@@ -8,12 +20,87 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://127.0.0.1:9092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-spark-master
+    entrypoint: /usr/local/lib/python3.11/site-packages/pyspark/bin/spark-class
+    command: org.apache.spark.deploy.master.Master --host spark-master --port 7077 --webui-port 8080
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+
+  spark-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-spark-worker-1
+    depends_on:
+      - spark-master
+    entrypoint: /usr/local/lib/python3.11/site-packages/pyspark/bin/spark-class
+    command: org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --cores 2 --memory 2G --webui-port 8081
+    ports:
+      - "8081:8081"
+
+  spark-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-spark-worker-2
+    depends_on:
+      - spark-master
+    entrypoint: /usr/local/lib/python3.11/site-packages/pyspark/bin/spark-class
+    command: org.apache.spark.deploy.worker.Worker spark://spark-master:7077 --cores 2 --memory 2G --webui-port 8081
+    ports:
+      - "8082:8081"
+
+  preprocess-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: preprocess-api
+    ports:
+      - "8000:8000"
+      - "4040:4040"
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_REGION: us-east-1
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: data-cleaned-topic
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: preprocess-api
+      SPARK_DRIVER_PORT: 7078
+      SPARK_BLOCKMANAGER_PORT: 7079
+      SPARK_JARS_PACKAGES: org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262
+    depends_on:
+      minio:
+        condition: service_started
+      kafka:
+        condition: service_started
+      spark-master:
+        condition: service_started
+      spark-worker-1:
+        condition: service_started
+      spark-worker-2:
+        condition: service_started
+    volumes:
+      - ./app:/app/app
+      - ./testdata:/app/testdata
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  minio-data:

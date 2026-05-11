@@ -92,8 +92,8 @@ def _apply_dp_to_dataframe(df: pd.DataFrame, epsilon: float) -> pd.DataFrame:
     
     # Identify numerical columns (excluding sensitive attribute income)
     numerical_cols = [
-        col for col in df.select_dtypes(include=['float64', 'int64']).columns
-        if col not in ['income']
+        col for col in df.select_dtypes(include=["number"]).columns
+        if col not in ["income"]
     ]
     
     # Define sensitivities for Adult dataset
