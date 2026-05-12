@@ -210,7 +210,7 @@ def _spark_clean(raw_file_path: str):
         map_pairs.extend([F.lit(k), F.lit(v)])
     spark_map = F.create_map(*map_pairs)
 
-    df = df.withColumn("continent_code",
-        F.coalesce(spark_map[F.col("`native-country`")], F.lit("Other")))
+    # df = df.withColumn("continent_code",
+    #     F.coalesce(spark_map[F.col("`native-country`")], F.lit("Other")))
 
     return df
