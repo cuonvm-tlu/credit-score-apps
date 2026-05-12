@@ -9,7 +9,7 @@ import shutil
 import logging
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Optional
 
 import pycountry
 import pycountry_convert as pc
@@ -42,7 +42,7 @@ def _normalize(name: str) -> str:
     return re.sub(r"\s+", " ", name).strip()
 
 
-def _to_continent(name: str | None) -> str:
+def _to_continent(name: Optional[str]) -> str:
     if not name:
         return "Other"
     name = _normalize(name)
@@ -78,7 +78,7 @@ def spark_clean_and_upload(
     Giống clean_and_upload() trong cleaner.py nhưng dùng Spark.
     """
     total_start = perf_counter()
-    benchmark: dict[str, float | str] = {
+    benchmark: dict[str, object] = {
         "source_key": source_key,
         "original_filename": original_filename,
     }

@@ -35,7 +35,7 @@ pip install -r requirements.txt
 ## Running the Service
 
 ```bash
-python app/main.py
+python -m app.main
 ```
 
 The service will continuously poll for Kafka messages and process them.
