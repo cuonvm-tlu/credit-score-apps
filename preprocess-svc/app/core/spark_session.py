@@ -1,10 +1,11 @@
 import tempfile
 from pathlib import Path
 from threading import Lock
+from typing import Optional
 
 from pyspark.sql import SparkSession
 
-_spark_session: SparkSession | None = None
+_spark_session: Optional[SparkSession] = None
 _lock = Lock()
 
 
