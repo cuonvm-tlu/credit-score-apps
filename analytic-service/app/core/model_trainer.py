@@ -18,13 +18,13 @@ from app.core.minio_client import get_minio_client, upload_model_to_minio
 md_lock = threading.Lock()
 MD_REPORT_PATH = "/home/tienpv16/Desktop/Workspace/credit-score-apps/BENCHMARK_RESULTS.md"
 
-def init_md_report():
-    if not os.path.exists(MD_REPORT_PATH):
-        with open(MD_REPORT_PATH, "w") as f:
-            f.write("# 🏆 AI Model Benchmark Results\n\n")
-            f.write("Bảng dưới đây tổng hợp kết quả của 3 mô hình (LR, RF, XGB) khi được train trên các tập dữ liệu gốc và dữ liệu đã bị ẩn danh.\n\n")
-            f.write("| Version ID | Data Type | Model | Accuracy | Precision | Recall | F1-Score |\n")
-            f.write("|------------|-----------|-------|----------|-----------|--------|----------|\n")
+# def init_md_report():
+    # if not os.path.exists(MD_REPORT_PATH):
+    #     with open(MD_REPORT_PATH, "w") as f:
+    #         f.write("# 🏆 AI Model Benchmark Results\n\n")
+    #         f.write("Bảng dưới đây tổng hợp kết quả của 3 mô hình (LR, RF, XGB) khi được train trên các tập dữ liệu gốc và dữ liệu đã bị ẩn danh.\n\n")
+    #         f.write("| Version ID | Data Type | Model | Accuracy | Precision | Recall | F1-Score |\n")
+    #         f.write("|------------|-----------|-------|----------|-----------|--------|----------|\n")
 
 def append_to_md_report(version_id: str, data_type: str, model_name: str, metrics: dict):
     with md_lock:
@@ -36,7 +36,7 @@ def train_and_save_model(
     version_id: str,
     model_key: Optional[str] = None,
 ) -> None:
-    init_md_report()
+    # init_md_report()
     
     # Identify data_type from parquet_path or model_key
     data_type = Path(parquet_path).stem
@@ -104,7 +104,7 @@ def train_and_save_model(
         }
 
         # Append to Markdown report
-        append_to_md_report(version_id, data_type, model_name, metrics)
+        # append_to_md_report(version_id, data_type, model_name, metrics)
 
         # Generate unique keys for each model
         if model_key:
